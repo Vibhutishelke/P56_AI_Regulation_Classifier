@@ -1,4 +1,5 @@
 import io, json, re
+import time 
 from datetime import datetime, timezone
 import requests
 import numpy as np
@@ -75,12 +76,88 @@ def read_upload(file):
         return "\n".join(page.extract_text() or "" for page in reader.pages)
     return file.getvalue().decode("utf-8", errors="ignore")
 
+
 def gemini(api_key, model_name, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-    payload = {"contents":[{"parts":[{"text":prompt}]}],
-               "generationConfig":{"temperature":0.1,"responseMimeType":"application/json"}}
-    response = requests.post(url, json=payload, timeout=90)
-    response.raise_for_status()
+
+    url = (
+        f"https://generativelanguage.googleapis.com/"
+        f"v1beta/models/{model_name}:generateContent"
+    )
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key
+    }
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json"
+        }
+    }
+
+    # Maximum 5 attempts
+    for attempt in range(5):
+
+        try:
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=120
+            )
+
+            # Retry temporary server errors
+            if response.status_code in [
+                408, 429, 500, 502, 503, 504
+            ]:
+
+                if attempt == 4:
+                    raise RuntimeError(
+                        f"Gemini unavailable after 5 attempts. "
+                        f"HTTP {response.status_code}: "
+                        f"{response.text[:500]}"
+                    )
+
+                wait_time = 2 ** attempt
+
+                st.warning(
+                    f"Gemini is temporarily unavailable. "
+                    f"Retrying in {wait_time} seconds..."
+                )
+
+                time.sleep(wait_time)
+                continue
+
+            response.raise_for_status()
+
+            result = response.json()
+
+            if "candidates" not in result:
+                raise RuntimeError(
+                    f"Unexpected Gemini response: {result}"
+                )
+
+            return result["candidates"][0]["content"]["parts"][0]["text"]
+
+        except requests.RequestException as error:
+
+            if attempt == 4:
+                raise RuntimeError(
+                    f"Gemini connection failed: {error}"
+                )
+
+            time.sleep(2 ** attempt)
+
+    raise RuntimeError("Gemini request failed.")
+
     return response.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 def build_prompt(case_text, evidence):
@@ -124,7 +201,7 @@ with st.sidebar:
     except Exception:
         secret_key = ""
     api_key = st.text_input("Gemini API key", value=secret_key, type="password")
-    model_name = st.text_input("Gemini model", value="gemini-2.5-flash")
+    model_name = st.text_input("Gemini model", value="gemini-3.8flash")
     st.caption("Never share your API key or commit it to GitHub.")
     uploads = st.file_uploader("Optional: upload official regulation PDFs/TXT", type=["pdf","txt"], accept_multiple_files=True)
     st.caption("Uploaded source files are used only for this session. Use official consolidated text for best results.")
