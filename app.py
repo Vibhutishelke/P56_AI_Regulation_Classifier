@@ -201,7 +201,7 @@ with st.sidebar:
     except Exception:
         secret_key = ""
     api_key = st.text_input("Gemini API key", value=secret_key, type="password")
-    model_name = st.text_input("Gemini model", value="gemini-3.8flash")
+    model_name = st.text_input("Gemini model", value="gemini-3.8-flash")
     st.caption("Never share your API key or commit it to GitHub.")
     uploads = st.file_uploader("Optional: upload official regulation PDFs/TXT", type=["pdf","txt"], accept_multiple_files=True)
     st.caption("Uploaded source files are used only for this session. Use official consolidated text for best results.")
